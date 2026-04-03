@@ -1,9 +1,10 @@
-# JARVIS Arduino Display — V1
+# JARVIS Arduino Display — V2
 
 Mini interface física do JARVIS usando:
 - Arduino Uno
 - OLED I2C 128x64 (provável SSD1306)
 - Desktop Windows 11 como ponte
+- Controle local e pela rede local
 
 ---
 
@@ -17,6 +18,8 @@ Na prática:
 - o **Arduino** desenha a interface na OLED
 - o **Windows 11** roda uma ponte em Python
 - a ponte recebe comandos HTTP e envia pela serial para o Arduino
+- a V2 permite **controle pela rede local**
+- a V2 suporta **token opcional** para proteger a API
 
 ---
 
@@ -120,25 +123,42 @@ Exemplo comum:
 - `COM4`
 - `COM5`
 
-### 5) Rodar a ponte
-Exemplo:
+### 5) Descobrir o IP local do Windows
+No PowerShell:
+
+```powershell
+ipconfig
+```
+
+Procure o IPv4 da máquina. Exemplo:
+- `192.168.1.50`
+
+### 6) Rodar a ponte
+Exemplo simples:
 
 ```powershell
 python bridge_windows.py --port COM5 --api-port 8765
 ```
 
+Exemplo recomendado com token:
+
+```powershell
+python bridge_windows.py --port COM5 --api-port 8765 --token jarvis123
+```
+
 Troque `COM5` pela porta real do Arduino.
 
-### 6) Resultado esperado
+### 7) Resultado esperado
 Se deu tudo certo, o terminal deve mostrar algo como:
 
 ```powershell
 JARVIS bridge online on http://0.0.0.0:8765 -> COM5
+API token protection: ENABLED
 ```
 
 ---
 
-## Validação completa
+## Validação local
 
 ### 1) Teste de saúde da API
 
@@ -150,49 +170,98 @@ Resultado esperado: resposta JSON com `ok: true`.
 
 ### 2) Colocar a tela em modo online
 
+Sem token:
+
 ```powershell
 curl -X POST http://localhost:8765/online
 ```
 
-Resultado esperado:
-- tela `JARVIS // ONLINE`
+Com token:
+
+```powershell
+curl -X POST http://localhost:8765/online -H "X-API-Key: jarvis123"
+```
 
 ### 3) Mostrar relógio
+
+Sem token:
 
 ```powershell
 curl -X POST http://localhost:8765/clock -H "Content-Type: application/json" -d '{"time":"03:49","subtitle":"Windows Link OK"}'
 ```
 
-Resultado esperado:
-- tela de relógio
-- subtítulo com status
+Com token:
+
+```powershell
+curl -X POST http://localhost:8765/clock -H "Content-Type: application/json" -H "X-API-Key: jarvis123" -d '{"time":"03:49","subtitle":"Windows Link OK"}'
+```
 
 ### 4) Mostrar mensagem
+
+Sem token:
 
 ```powershell
 curl -X POST http://localhost:8765/message -H "Content-Type: application/json" -d '{"line1":"JARVIS","line2":"Sistema OK","line3":"Andre online"}'
 ```
 
-Resultado esperado:
-- tela de mensagem
+Com token:
+
+```powershell
+curl -X POST http://localhost:8765/message -H "Content-Type: application/json" -H "X-API-Key: jarvis123" -d '{"line1":"JARVIS","line2":"Sistema OK","line3":"Andre online"}'
+```
 
 ### 5) Mostrar alerta temporário
+
+Sem token:
 
 ```powershell
 curl -X POST http://localhost:8765/alert -H "Content-Type: application/json" -d '{"text":"Nova mensagem"}'
 ```
 
-Resultado esperado:
-- alerta temporário por alguns segundos
+Com token:
+
+```powershell
+curl -X POST http://localhost:8765/alert -H "Content-Type: application/json" -H "X-API-Key: jarvis123" -d '{"text":"Nova mensagem"}'
+```
 
 ### 6) Colocar em idle
+
+Sem token:
 
 ```powershell
 curl -X POST http://localhost:8765/idle
 ```
 
-Resultado esperado:
-- tela de descanso
+Com token:
+
+```powershell
+curl -X POST http://localhost:8765/idle -H "X-API-Key: jarvis123"
+```
+
+---
+
+## Validação pela rede local
+
+Suponha que o IP do Windows seja `192.168.1.50`.
+
+### Teste do MacBook para o Windows
+
+Sem token:
+
+```bash
+curl http://192.168.1.50:8765/health
+```
+
+Com token em endpoint protegido:
+
+```bash
+curl -X POST http://192.168.1.50:8765/message \
+  -H 'Content-Type: application/json' \
+  -H 'X-API-Key: jarvis123' \
+  -d '{"line1":"JARVIS","line2":"Controle remoto","line3":"MacBook OK"}'
+```
+
+Se isso funcionar, a ponte está acessível na rede local e pronta para integração maior.
 
 ---
 
@@ -245,7 +314,57 @@ Exemplo:
 
 ---
 
+## Segurança básica da V2
+
+A API pode rodar com token opcional.
+
+### Como habilitar
+
+```powershell
+python bridge_windows.py --port COM5 --api-port 8765 --token jarvis123
+```
+
+Depois, envie o header:
+
+```http
+X-API-Key: jarvis123
+```
+
+ou:
+
+```http
+Authorization: Bearer jarvis123
+```
+
+### Recomendação
+Use token sempre que a API estiver exposta na rede local.
+
+---
+
+## Firewall do Windows
+
+Se o MacBook não conseguir acessar a API do Windows pela rede local, talvez o Windows Firewall esteja bloqueando.
+
+Verifique se a porta `8765` está liberada para a rede local privada.
+
+Se necessário, crie uma regra liberando entrada TCP nessa porta.
+
+---
+
 ## Solução de problemas
+
+### A API responde localmente, mas não responde de outro computador
+Possíveis causas:
+- firewall do Windows
+- IP errado
+- máquina em outra rede/sub-rede
+- antivírus bloqueando
+
+Checklist:
+- confirmar `ipconfig`
+- confirmar porta `8765`
+- testar `curl http://IP_DO_WINDOWS:8765/health`
+- revisar firewall
 
 ### A API responde, mas a tela não muda
 Possíveis causas:
@@ -271,16 +390,16 @@ Ações:
 - testar outra porta COM
 - reconectar o USB
 
-### A OLED não acende
+### Recebo erro 401 unauthorized
 Possíveis causas:
-- alimentação errada
-- GND/VCC invertidos
-- módulo com outro controlador/endereço
+- token errado
+- header ausente
+- token diferente do configurado no processo Python
 
 Ações:
-- revisar ligação elétrica
-- testar `0x3D`
-- confirmar compatibilidade SSD1306
+- revisar `--token`
+- reenviar com `X-API-Key`
+- confirmar se reiniciou a ponte com o token esperado
 
 ---
 
@@ -293,10 +412,13 @@ Ações:
 5. Testar `/message`
 6. Testar `/alert`
 7. Confirmar que a OLED responde corretamente
+8. Descobrir IP local do Windows
+9. Testar chamada do MacBook para o Windows
+10. Validar proteção com token
 
 ---
 
-## Visual da V1
+## Visual da interface
 
 A interface atual inclui:
 - boot screen
@@ -316,13 +438,14 @@ Estilo:
 ## Próximas evoluções sugeridas
 
 - auto-start da ponte no Windows
-- controle remoto pela rede local
-- integração com eventos reais do JARVIS
+- integração direta com eventos reais do JARVIS
 - menus com botão físico
 - ícones customizados
 - animações melhores
 - sensor de presença / brilho
-- modo status de sistema do desktop
+- modo status do desktop
+- serviço em background no Windows
+- autenticação mais forte
 
 ---
 

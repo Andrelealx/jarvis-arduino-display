@@ -1,12 +1,16 @@
 import argparse
+import os
 import threading
 import time
 from datetime import datetime
+from functools import wraps
+
 from flask import Flask, request, jsonify
 import serial
 
 app = Flask(__name__)
 ser = None
+API_TOKEN = None
 state = {
     "mode": "online",
     "line1": "JARVIS",
@@ -21,6 +25,27 @@ def send(cmd: str):
     if ser is None:
         raise RuntimeError("Serial not connected")
     ser.write((cmd.strip() + "\n").encode("utf-8"))
+
+
+def require_token(fn):
+    @wraps(fn)
+    def wrapper(*args, **kwargs):
+        global API_TOKEN
+        if not API_TOKEN:
+            return fn(*args, **kwargs)
+
+        auth_header = request.headers.get("Authorization", "")
+        supplied = request.headers.get("X-API-Key", "")
+
+        if auth_header.startswith("Bearer "):
+            supplied = auth_header[7:].strip()
+
+        if supplied != API_TOKEN:
+            return jsonify({"ok": False, "error": "unauthorized"}), 401
+
+        return fn(*args, **kwargs)
+
+    return wrapper
 
 
 def apply_state():
@@ -45,10 +70,17 @@ def apply_state():
 
 @app.get("/health")
 def health():
-    return jsonify({"ok": True, "serial": ser is not None, "state": state})
+    return jsonify({
+        "ok": True,
+        "serial": ser is not None,
+        "state": state,
+        "tokenEnabled": bool(API_TOKEN),
+        "serverTime": datetime.now().isoformat(timespec="seconds"),
+    })
 
 
 @app.post("/online")
+@require_token
 def online():
     state["mode"] = "online"
     apply_state()
@@ -56,6 +88,7 @@ def online():
 
 
 @app.post("/idle")
+@require_token
 def idle():
     state["mode"] = "idle"
     apply_state()
@@ -63,6 +96,7 @@ def idle():
 
 
 @app.post("/message")
+@require_token
 def message():
     data = request.get_json(force=True, silent=True) or {}
     state["mode"] = "msg"
@@ -74,6 +108,7 @@ def message():
 
 
 @app.post("/alert")
+@require_token
 def alert():
     data = request.get_json(force=True, silent=True) or {}
     text = str(data.get("text", "Novo alerta"))[:20]
@@ -83,6 +118,7 @@ def alert():
 
 
 @app.post("/clock")
+@require_token
 def clock():
     data = request.get_json(force=True, silent=True) or {}
     hhmm = str(data.get("time", datetime.now().strftime("%H:%M")))[:10]
@@ -103,13 +139,16 @@ def clock_worker():
 
 
 def main():
-    global ser
+    global ser, API_TOKEN
     parser = argparse.ArgumentParser(description="JARVIS Arduino Display Bridge")
     parser.add_argument("--port", required=True, help="COM port, ex: COM5")
     parser.add_argument("--baud", type=int, default=115200)
-    parser.add_argument("--host", default="0.0.0.0")
+    parser.add_argument("--host", default="0.0.0.0", help="Use 0.0.0.0 para aceitar rede local")
     parser.add_argument("--api-port", type=int, default=8765)
+    parser.add_argument("--token", default=None, help="Token opcional para proteger a API")
     args = parser.parse_args()
+
+    API_TOKEN = args.token or os.environ.get("JARVIS_DISPLAY_TOKEN")
 
     ser = serial.Serial(args.port, args.baud, timeout=1)
     time.sleep(2)
@@ -120,6 +159,11 @@ def main():
     threading.Thread(target=clock_worker, daemon=True).start()
 
     print(f"JARVIS bridge online on http://{args.host}:{args.api_port} -> {args.port}")
+    if API_TOKEN:
+        print("API token protection: ENABLED")
+    else:
+        print("API token protection: DISABLED")
+
     app.run(host=args.host, port=args.api_port)
 
 
