@@ -1,0 +1,27 @@
+{
+  "updatedAt": "2026-04-03T04:25:00-03:00",
+  "token": "change-me",
+  "commands": [
+    {
+      "id": "demo-online-001",
+      "type": "online"
+    },
+    {
+      "id": "demo-message-001",
+      "type": "message",
+      "line1": "JARVIS",
+      "line2": "Controle ativo",
+      "line3": "Andre"
+    },
+    {
+      "id": "demo-alert-001",
+      "type": "alert",
+      "text": "Nova tarefa"
+    },
+    {
+      "id": "demo-clock-001",
+      "type": "clock",
+      "subtitle": "Windows 11"
+    }
+  ]
+}

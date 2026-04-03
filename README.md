@@ -1,25 +1,31 @@
-# JARVIS Arduino Display — V2
+# JARVIS Arduino Display — V3
 
 Mini interface física do JARVIS usando:
 - Arduino Uno
 - OLED I2C 128x64 (provável SSD1306)
 - Desktop Windows 11 como ponte
 - Controle local e pela rede local
+- Modo autonômico por polling remoto
 
 ---
 
 ## Visão geral
 
-Arquitetura:
+Arquitetura base:
 
 `MacBook / JARVIS -> rede local -> Windows 11 -> USB serial -> Arduino Uno -> OLED`
+
+Arquitetura autonômica V3:
+
+`JARVIS -> JSON remoto -> Windows poller -> bridge local -> Arduino -> OLED`
 
 Na prática:
 - o **Arduino** desenha a interface na OLED
 - o **Windows 11** roda uma ponte em Python
-- a ponte recebe comandos HTTP e envia pela serial para o Arduino
-- a V2 permite **controle pela rede local**
-- a V2 suporta **token opcional** para proteger a API
+- o **poller** no Windows consulta um JSON remoto periodicamente
+- quando encontra novos comandos, aplica na tela automaticamente
+
+Isso resolve a autonomia prática quando o agente não consegue chamar diretamente um IP privado da sua LAN.
 
 ---
 
@@ -27,6 +33,8 @@ Na prática:
 
 - `jarvis_display.ino` -> sketch do Arduino
 - `bridge_windows.py` -> ponte HTTP -> Serial no Windows
+- `state_poller.py` -> poller que lê comandos remotos
+- `command_state.example.json` -> exemplo do JSON remoto
 - `requirements.txt` -> dependências Python
 
 ---
@@ -52,47 +60,19 @@ Instale pela Arduino IDE:
 
 ---
 
-## Passo a passo completo — Arduino
+## Passo a passo — Arduino
 
-### 1) Abrir o projeto
-Abra o arquivo:
+1. Abra `jarvis_display.ino`
+2. Selecione a placa `Arduino Uno`
+3. Selecione a porta COM
+4. Faça upload
+5. Confirme que a OLED mostra boot e depois `ONLINE`
 
-- `jarvis_display.ino`
-
-### 2) Selecionar a placa
-Na Arduino IDE:
-- **Board / Placa**: `Arduino Uno`
-
-### 3) Selecionar a porta
-Escolha a porta COM correspondente ao Arduino.
-
-### 4) Fazer upload
-Clique em **Upload**.
-
-### 5) Resultado esperado
-Se tudo estiver certo, a OLED deve:
-- mostrar a tela de boot do JARVIS
-- depois ir para a tela `ONLINE`
-
-### 6) Se não funcionar
-Se a tela não acender ou nada aparecer:
-- revise os fios `SDA` e `SCL`
-- confirme se `A4 = SDA` e `A5 = SCL`
-- teste trocar no código:
-
-```cpp
-#define SCREEN_ADDRESS 0x3C
-```
-
-para:
-
-```cpp
-#define SCREEN_ADDRESS 0x3D
-```
+Se não funcionar, revise fios e teste `0x3D` em vez de `0x3C`.
 
 ---
 
-## Passo a passo completo — Windows 11
+## Passo a passo — Windows 11
 
 ### 1) Clonar o repositório
 
@@ -101,351 +81,292 @@ git clone https://github.com/Andrelealx/jarvis-arduino-display.git
 cd jarvis-arduino-display
 ```
 
-### 2) Verificar Python
-
-```powershell
-python --version
-```
-
-Se não tiver Python 3 instalado, instale antes.
-
-### 3) Instalar dependências
+### 2) Instalar dependências
 
 ```powershell
 pip install -r requirements.txt
 ```
 
-### 4) Descobrir a porta COM do Arduino
-Você pode verificar no Arduino IDE ou no Gerenciador de Dispositivos.
+### 3) Rodar a bridge local
 
-Exemplo comum:
-- `COM3`
-- `COM4`
-- `COM5`
-
-### 5) Descobrir o IP local do Windows
-No PowerShell:
+Exemplo com COM4 e token:
 
 ```powershell
-ipconfig
+python bridge_windows.py --port COM4 --api-port 8765 --token jarvis123
 ```
 
-Procure o IPv4 da máquina. Exemplo:
-- `192.168.1.50`
-
-### 6) Rodar a ponte
-Exemplo simples:
-
-```powershell
-python bridge_windows.py --port COM5 --api-port 8765
-```
-
-Exemplo recomendado com token:
-
-```powershell
-python bridge_windows.py --port COM5 --api-port 8765 --token jarvis123
-```
-
-Troque `COM5` pela porta real do Arduino.
-
-### 7) Resultado esperado
-Se deu tudo certo, o terminal deve mostrar algo como:
-
-```powershell
-JARVIS bridge online on http://0.0.0.0:8765 -> COM5
-API token protection: ENABLED
-```
-
----
-
-## Validação local
-
-### 1) Teste de saúde da API
+### 4) Testar localmente
 
 ```powershell
 curl http://localhost:8765/health
 ```
 
-Resultado esperado: resposta JSON com `ok: true`.
-
-### 2) Colocar a tela em modo online
-
-Sem token:
-
-```powershell
-curl -X POST http://localhost:8765/online
-```
-
-Com token:
-
-```powershell
-curl -X POST http://localhost:8765/online -H "X-API-Key: jarvis123"
-```
-
-### 3) Mostrar relógio
-
-Sem token:
-
-```powershell
-curl -X POST http://localhost:8765/clock -H "Content-Type: application/json" -d '{"time":"03:49","subtitle":"Windows Link OK"}'
-```
-
-Com token:
-
-```powershell
-curl -X POST http://localhost:8765/clock -H "Content-Type: application/json" -H "X-API-Key: jarvis123" -d '{"time":"03:49","subtitle":"Windows Link OK"}'
-```
-
-### 4) Mostrar mensagem
-
-Sem token:
-
-```powershell
-curl -X POST http://localhost:8765/message -H "Content-Type: application/json" -d '{"line1":"JARVIS","line2":"Sistema OK","line3":"Andre online"}'
-```
-
-Com token:
-
-```powershell
-curl -X POST http://localhost:8765/message -H "Content-Type: application/json" -H "X-API-Key: jarvis123" -d '{"line1":"JARVIS","line2":"Sistema OK","line3":"Andre online"}'
-```
-
-### 5) Mostrar alerta temporário
-
-Sem token:
-
-```powershell
-curl -X POST http://localhost:8765/alert -H "Content-Type: application/json" -d '{"text":"Nova mensagem"}'
-```
-
-Com token:
-
-```powershell
-curl -X POST http://localhost:8765/alert -H "Content-Type: application/json" -H "X-API-Key: jarvis123" -d '{"text":"Nova mensagem"}'
-```
-
-### 6) Colocar em idle
-
-Sem token:
-
-```powershell
-curl -X POST http://localhost:8765/idle
-```
-
-Com token:
-
-```powershell
-curl -X POST http://localhost:8765/idle -H "X-API-Key: jarvis123"
-```
-
 ---
 
-## Validação pela rede local
+## V2 — Controle direto pela rede local
 
-Suponha que o IP do Windows seja `192.168.1.50`.
-
-### Teste do MacBook para o Windows
-
-Sem token:
+Se o IP do Windows for `192.168.0.13`, você pode chamar:
 
 ```bash
-curl http://192.168.1.50:8765/health
+curl http://192.168.0.13:8765/health
 ```
 
-Com token em endpoint protegido:
+Exemplo de mensagem:
 
 ```bash
-curl -X POST http://192.168.1.50:8765/message \
+curl -X POST http://192.168.0.13:8765/message \
   -H 'Content-Type: application/json' \
-  -H 'X-API-Key: jarvis123' \
   -d '{"line1":"JARVIS","line2":"Controle remoto","line3":"MacBook OK"}'
 ```
 
-Se isso funcionar, a ponte está acessível na rede local e pronta para integração maior.
+Se a bridge estiver com token:
+
+```bash
+curl -X POST http://192.168.0.13:8765/message \
+  -H 'Content-Type: application/json' \
+  -H 'X-API-Key: jarvis123' \
+  -d '{"line1":"JARVIS","line2":"Protegido","line3":"Rede local"}'
+```
 
 ---
 
-## Endpoints disponíveis
+## V3 — Modo autonômico por polling
 
-### `GET /health`
-Verifica se a ponte está online.
+### Ideia
+Em vez de depender de `curl` manual, o Windows roda um processo que lê um JSON remoto de tempos em tempos.
 
-### `POST /online`
-Coloca a tela no modo online.
+Quando surgem comandos novos nesse JSON, o poller envia esses comandos para a bridge local, e a tela muda sozinha.
 
-### `POST /idle`
-Coloca a tela no modo idle.
+### Arquivo remoto esperado
+Use o `command_state.example.json` como base.
 
-### `POST /clock`
-Mostra relógio.
-
-Exemplo:
+Formato:
 
 ```json
 {
-  "time": "03:49",
-  "subtitle": "Windows 11"
+  "updatedAt": "2026-04-03T04:25:00-03:00",
+  "token": "change-me",
+  "commands": [
+    {
+      "id": "demo-online-001",
+      "type": "online"
+    },
+    {
+      "id": "demo-message-001",
+      "type": "message",
+      "line1": "JARVIS",
+      "line2": "Controle ativo",
+      "line3": "Andre"
+    }
+  ]
 }
 ```
 
-### `POST /message`
-Mostra mensagem em 2 ou 3 linhas.
+### Tipos de comando suportados
+- `online`
+- `idle`
+- `message`
+- `alert`
+- `clock`
 
-Exemplo:
+### Campos por tipo
 
+#### `online`
+```json
+{ "id": "x1", "type": "online" }
+```
+
+#### `idle`
+```json
+{ "id": "x2", "type": "idle" }
+```
+
+#### `message`
 ```json
 {
+  "id": "x3",
+  "type": "message",
   "line1": "JARVIS",
-  "line2": "Sistema OK",
-  "line3": "Andre online"
+  "line2": "Nova tarefa",
+  "line3": "Andre"
 }
 ```
 
-### `POST /alert`
-Mostra um alerta temporário.
-
-Exemplo:
-
+#### `alert`
 ```json
 {
+  "id": "x4",
+  "type": "alert",
   "text": "Nova mensagem"
 }
 ```
 
+#### `clock`
+```json
+{
+  "id": "x5",
+  "type": "clock",
+  "subtitle": "Windows 11"
+}
+```
+
 ---
 
-## Segurança básica da V2
+## Como subir o modo autonômico
 
-A API pode rodar com token opcional.
+### 1) Publique um JSON remoto acessível por URL direta
+Pode ser, por exemplo:
+- GitHub raw de um arquivo versionado
+- gist raw
+- outro endpoint estático sob seu controle
 
-### Como habilitar
+Exemplo fictício:
+
+```text
+https://raw.githubusercontent.com/Andrelealx/jarvis-arduino-display/main/command_state.json
+```
+
+### 2) Rodar a bridge local
 
 ```powershell
-python bridge_windows.py --port COM5 --api-port 8765 --token jarvis123
+python bridge_windows.py --port COM4 --api-port 8765 --token jarvis123
 ```
 
-Depois, envie o header:
+### 3) Rodar o poller
 
-```http
-X-API-Key: jarvis123
+```powershell
+python state_poller.py --state-url https://raw.githubusercontent.com/Andrelealx/jarvis-arduino-display/main/command_state.json --bridge-url http://127.0.0.1:8765 --bridge-token jarvis123 --shared-token change-me --interval 5
 ```
 
-ou:
-
-```http
-Authorization: Bearer jarvis123
-```
-
-### Recomendação
-Use token sempre que a API estiver exposta na rede local.
+### 4) O que o poller faz
+- lê o JSON remoto
+- verifica o token compartilhado
+- ignora comandos já aplicados
+- aplica apenas comandos novos
+- salva cache local em `.poller_state.json`
 
 ---
 
-## Firewall do Windows
+## Como operar a tela de forma autonômica
 
-Se o MacBook não conseguir acessar a API do Windows pela rede local, talvez o Windows Firewall esteja bloqueando.
+O caminho prático é:
+1. manter um `command_state.json` remoto
+2. adicionar novos comandos com IDs novos
+3. o poller no Windows detecta e aplica sozinho
 
-Verifique se a porta `8765` está liberada para a rede local privada.
+Exemplo:
 
-Se necessário, crie uma regra liberando entrada TCP nessa porta.
+```json
+{
+  "updatedAt": "2026-04-03T04:40:00-03:00",
+  "token": "change-me",
+  "commands": [
+    {
+      "id": "msg-20260403-0440-001",
+      "type": "message",
+      "line1": "JARVIS",
+      "line2": "Modo autonomo",
+      "line3": "Ativado"
+    },
+    {
+      "id": "alert-20260403-0440-001",
+      "type": "alert",
+      "text": "Nova ordem"
+    }
+  ]
+}
+```
+
+---
+
+## Segurança da V3
+
+A V3 tem dois níveis simples de proteção:
+
+### 1) Token da bridge local
+Usado para proteger a API do Windows.
+
+Exemplo:
+
+```powershell
+python bridge_windows.py --port COM4 --api-port 8765 --token jarvis123
+```
+
+### 2) Shared token no JSON remoto
+O poller valida o campo `token` do JSON remoto antes de aplicar comandos.
+
+Exemplo no JSON:
+
+```json
+{
+  "token": "change-me"
+}
+```
+
+Exemplo no poller:
+
+```powershell
+python state_poller.py --state-url URL --shared-token change-me
+```
 
 ---
 
 ## Solução de problemas
 
-### A API responde localmente, mas não responde de outro computador
+### O poller não aplica nada
 Possíveis causas:
-- firewall do Windows
-- IP errado
-- máquina em outra rede/sub-rede
-- antivírus bloqueando
+- URL do JSON errada
+- JSON inválido
+- token compartilhado divergente
+- bridge local offline
 
 Checklist:
-- confirmar `ipconfig`
-- confirmar porta `8765`
-- testar `curl http://IP_DO_WINDOWS:8765/health`
-- revisar firewall
+- abrir a URL no navegador
+- validar JSON
+- conferir `--shared-token`
+- conferir `http://127.0.0.1:8765/health`
 
-### A API responde, mas a tela não muda
-Possíveis causas:
-- porta COM errada
-- sketch não foi gravado no Arduino
-- OLED em endereço I2C diferente (`0x3D` em vez de `0x3C`)
-- fios SDA/SCL invertidos
+### Comando já foi executado e não repete
+Isso é esperado.
 
+O poller deduplica por `id`.
+
+Se quiser reaplicar, crie um novo comando com **novo ID**.
+
+### Bridge responde, mas a OLED não muda
 Checklist:
-- confirmar upload do `.ino`
 - confirmar COM correta
-- revisar A4/A5
+- confirmar sketch no Arduino
+- revisar SDA/A4 e SCL/A5
 - testar `0x3D`
 
-### O script Python não abre a serial
-Possíveis causas:
-- COM errada
-- Arduino IDE/Serial Monitor ainda aberto travando a porta
-- cabo USB com falha
-
-Ações:
-- fechar Arduino IDE ou Serial Monitor
-- testar outra porta COM
-- reconectar o USB
-
-### Recebo erro 401 unauthorized
-Possíveis causas:
-- token errado
-- header ausente
-- token diferente do configurado no processo Python
-
-Ações:
-- revisar `--token`
-- reenviar com `X-API-Key`
-- confirmar se reiniciou a ponte com o token esperado
-
 ---
 
-## Fluxo recomendado de uso
+## Fluxo recomendado
 
-1. Fazer upload do sketch no Arduino
-2. Rodar `bridge_windows.py` no Windows
-3. Testar `/health`
-4. Testar `/online`
-5. Testar `/message`
-6. Testar `/alert`
-7. Confirmar que a OLED responde corretamente
-8. Descobrir IP local do Windows
-9. Testar chamada do MacBook para o Windows
-10. Validar proteção com token
+### V1
+- validar hardware e OLED
 
----
+### V2
+- validar bridge local e controle pela LAN
 
-## Visual da interface
-
-A interface atual inclui:
-- boot screen
-- online screen
-- clock screen
-- message screen
-- alert overlay
-- idle screen
-
-Estilo:
-- moldura estilo painel
-- cabeçalho `JARVIS // ...`
-- visual minimalista futurista
+### V3
+- publicar JSON remoto
+- subir poller no Windows
+- passar a controlar por comandos remotos versionados
 
 ---
 
 ## Próximas evoluções sugeridas
 
-- auto-start da ponte no Windows
-- integração direta com eventos reais do JARVIS
-- menus com botão físico
-- ícones customizados
-- animações melhores
-- sensor de presença / brilho
-- modo status do desktop
-- serviço em background no Windows
-- autenticação mais forte
+- auto-start da bridge no Windows
+- auto-start do poller no Windows
+- endpoint de confirmação/ack de comando
+- fila com expiração
+- prioridade de comandos
+- páginas rotativas automáticas
+- integração com eventos reais do JARVIS
+- serviço Windows em background
 
 ---
 
