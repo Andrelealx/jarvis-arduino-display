@@ -1,0 +1,22 @@
+{
+  "updatedAt": "2026-04-03T04:30:00-03:00",
+  "token": "change-me",
+  "commands": [
+    {
+      "id": "boot-20260403-0430-001",
+      "type": "online"
+    },
+    {
+      "id": "msg-20260403-0430-001",
+      "type": "message",
+      "line1": "JARVIS",
+      "line2": "Modo autonomo",
+      "line3": "Pronto"
+    },
+    {
+      "id": "alert-20260403-0430-001",
+      "type": "alert",
+      "text": "Link ativo"
+    }
+  ]
+}

@@ -35,6 +35,7 @@ Isso resolve a autonomia prática quando o agente não consegue chamar diretamen
 - `bridge_windows.py` -> ponte HTTP -> Serial no Windows
 - `state_poller.py` -> poller que lê comandos remotos
 - `command_state.example.json` -> exemplo do JSON remoto
+- `command_state.json` -> estado remoto pronto para uso
 - `requirements.txt` -> dependências Python
 
 ---
@@ -137,30 +138,19 @@ Em vez de depender de `curl` manual, o Windows roda um processo que lê um JSON 
 
 Quando surgem comandos novos nesse JSON, o poller envia esses comandos para a bridge local, e a tela muda sozinha.
 
-### Arquivo remoto esperado
-Use o `command_state.example.json` como base.
+### JSON remoto pronto
+Já existe um arquivo pronto no repositório:
 
-Formato:
+- `command_state.json`
 
-```json
-{
-  "updatedAt": "2026-04-03T04:25:00-03:00",
-  "token": "change-me",
-  "commands": [
-    {
-      "id": "demo-online-001",
-      "type": "online"
-    },
-    {
-      "id": "demo-message-001",
-      "type": "message",
-      "line1": "JARVIS",
-      "line2": "Controle ativo",
-      "line3": "Andre"
-    }
-  ]
-}
+URL raw esperada:
+
+```text
+https://raw.githubusercontent.com/Andrelealx/jarvis-arduino-display/main/command_state.json
 ```
+
+### Conteúdo inicial atual
+O `command_state.json` já foi criado com comandos iniciais de validação autonômica.
 
 ### Tipos de comando suportados
 - `online`
@@ -214,31 +204,19 @@ Formato:
 
 ## Como subir o modo autonômico
 
-### 1) Publique um JSON remoto acessível por URL direta
-Pode ser, por exemplo:
-- GitHub raw de um arquivo versionado
-- gist raw
-- outro endpoint estático sob seu controle
-
-Exemplo fictício:
-
-```text
-https://raw.githubusercontent.com/Andrelealx/jarvis-arduino-display/main/command_state.json
-```
-
-### 2) Rodar a bridge local
+### 1) Rodar a bridge local
 
 ```powershell
 python bridge_windows.py --port COM4 --api-port 8765 --token jarvis123
 ```
 
-### 3) Rodar o poller
+### 2) Rodar o poller
 
 ```powershell
 python state_poller.py --state-url https://raw.githubusercontent.com/Andrelealx/jarvis-arduino-display/main/command_state.json --bridge-url http://127.0.0.1:8765 --bridge-token jarvis123 --shared-token change-me --interval 5
 ```
 
-### 4) O que o poller faz
+### 3) O que o poller faz
 - lê o JSON remoto
 - verifica o token compartilhado
 - ignora comandos já aplicados
@@ -250,11 +228,12 @@ python state_poller.py --state-url https://raw.githubusercontent.com/Andrelealx/
 ## Como operar a tela de forma autonômica
 
 O caminho prático é:
-1. manter um `command_state.json` remoto
+1. manter `command_state.json` no repositório
 2. adicionar novos comandos com IDs novos
-3. o poller no Windows detecta e aplica sozinho
+3. dar commit e push
+4. o poller no Windows detecta e aplica sozinho
 
-Exemplo:
+Exemplo de JSON:
 
 ```json
 {
@@ -276,6 +255,9 @@ Exemplo:
   ]
 }
 ```
+
+### Regra importante
+Para o poller aplicar algo novo, cada comando precisa ter um **ID novo**.
 
 ---
 
@@ -351,9 +333,11 @@ Checklist:
 - validar bridge local e controle pela LAN
 
 ### V3
-- publicar JSON remoto
-- subir poller no Windows
-- passar a controlar por comandos remotos versionados
+- subir bridge
+- subir poller
+- atualizar `command_state.json`
+- dar commit/push
+- deixar o Windows aplicar sozinho
 
 ---
 
