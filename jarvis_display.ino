@@ -20,6 +20,7 @@ unsigned long bootStart = 0;
 unsigned long lastClockTick = 0;
 int pulseFrame = 0;
 int bootDots = 0;
+bool dirty = true;
 
 void centerText(const String &text, int y, int size) {
   int16_t x1, y1;
@@ -62,14 +63,24 @@ void renderOnline() {
   display.clearDisplay();
   drawFrame();
   drawHeader("JARVIS // ONLINE");
-  centerText("ONLINE", 22, 2);
-  display.drawCircle(22, 50, 4, SSD1306_WHITE);
+  centerText("ONLINE", 20, 2);
+
+  // Indicador grande e inequívoco
+  display.drawCircle(18, 49, 7, SSD1306_WHITE);
   if (pulseFrame % 2 == 0) {
-    display.fillCircle(22, 50, 2, SSD1306_WHITE);
+    display.fillCircle(18, 49, 5, SSD1306_WHITE);
   }
+
+  // Barra de pulso visível
+  int barWidth = (pulseFrame % 2 == 0) ? 40 : 18;
+  display.drawRect(30, 44, 48, 10, SSD1306_WHITE);
+  display.fillRect(34, 47, barWidth, 4, SSD1306_WHITE);
+
   display.setTextSize(1);
-  display.setCursor(32, 46);
-  display.print("Link Windows OK");
+  display.setCursor(84, 46);
+  display.print("OK");
+  display.setCursor(30, 58);
+  display.print("Link Windows");
   display.display();
 }
 
@@ -114,7 +125,7 @@ void renderIdle() {
   display.clearDisplay();
   drawFrame();
   drawHeader("JARVIS // IDLE");
-  centerText("André", 22, 2);
+  centerText("Andre", 22, 2);
   display.setTextSize(1);
   centerText("Sistema operacional", 46, 1);
   display.display();
@@ -123,6 +134,7 @@ void renderIdle() {
 void renderCurrent() {
   if (millis() < alertUntil && alertText.length() > 0) {
     renderAlert();
+    dirty = false;
     return;
   }
 
@@ -132,6 +144,8 @@ void renderCurrent() {
   else if (currentScreen == "clock") renderClock();
   else if (currentScreen == "idle") renderIdle();
   else renderOnline();
+
+  dirty = false;
 }
 
 void handleCommand(String cmd) {
@@ -140,12 +154,16 @@ void handleCommand(String cmd) {
 
   if (cmd.startsWith("SCREEN:")) {
     currentScreen = cmd.substring(7);
+    dirty = true;
   } else if (cmd.startsWith("LINE1:")) {
     line1 = cmd.substring(6);
+    dirty = true;
   } else if (cmd.startsWith("LINE2:")) {
     line2 = cmd.substring(6);
+    dirty = true;
   } else if (cmd.startsWith("LINE3:")) {
     line3 = cmd.substring(6);
+    dirty = true;
   } else if (cmd.startsWith("MSG:")) {
     currentScreen = "msg";
     String payload = cmd.substring(4);
@@ -157,22 +175,25 @@ void handleCommand(String cmd) {
       line1 = payload;
       line2 = "";
     }
+    dirty = true;
   } else if (cmd.startsWith("TIME:")) {
     currentScreen = "clock";
     line1 = cmd.substring(5);
+    dirty = true;
   } else if (cmd.startsWith("SUB:")) {
     line2 = cmd.substring(4);
+    dirty = true;
   } else if (cmd.startsWith("ALERT:")) {
     alertText = cmd.substring(6);
     alertUntil = millis() + 8000;
+    dirty = true;
   } else if (cmd == "CLEAR") {
     line1 = "";
     line2 = "";
     line3 = "";
     currentScreen = "idle";
+    dirty = true;
   }
-
-  renderCurrent();
 }
 
 void setup() {
@@ -186,11 +207,12 @@ void setup() {
   display.clearDisplay();
   display.setTextColor(SSD1306_WHITE);
   bootStart = millis();
-  renderBoot();
+  dirty = true;
+  renderCurrent();
 }
 
 void loop() {
-  if (Serial.available()) {
+  while (Serial.available()) {
     String cmd = Serial.readStringUntil('\n');
     handleCommand(cmd);
   }
@@ -199,20 +221,31 @@ void loop() {
 
   if (currentScreen == "boot" && now - bootStart > 4000) {
     currentScreen = "online";
-    renderCurrent();
+    dirty = true;
   }
 
-  if (now - lastAnim > 700) {
+  if (now - lastAnim >= 500) {
     lastAnim = now;
     pulseFrame++;
     bootDots = (bootDots + 1) % 4;
+
     if (currentScreen == "boot" || currentScreen == "online") {
-      renderCurrent();
+      dirty = true;
     }
   }
 
-  if (currentScreen == "clock" && now - lastClockTick > 1000) {
+  if (currentScreen == "clock" && now - lastClockTick >= 1000) {
     lastClockTick = now;
+    dirty = true;
+  }
+
+  if (alertUntil > 0 && now >= alertUntil && alertText.length() > 0) {
+    alertText = "";
+    alertUntil = 0;
+    dirty = true;
+  }
+
+  if (dirty) {
     renderCurrent();
   }
 }

@@ -68,6 +68,10 @@ Instale pela Arduino IDE:
 3. Selecione a porta COM
 4. Faça upload
 5. Confirme que a OLED mostra boot e depois `ONLINE`
+6. Na versão corrigida do sketch, o modo `ONLINE` tem:
+   - bolha pulsante maior
+   - barra de atividade visível
+   - animação mais evidente
 
 Se não funcionar, revise fios e teste `0x3D` em vez de `0x3C`.
 
